@@ -104,6 +104,17 @@ input[type=checkbox]{width:22px;height:22px;accent-color:var(--blue)}
 details summary{cursor:pointer;font-weight:600}
 details p{color:var(--muted);font-size:.92rem}
 @media (prefers-reduced-motion: reduce){.beat i{transition:none}}
+
+/* Tela bloqueada */
+#lockBtn{background:var(--ink);color:var(--bg)}
+.lock{position:fixed;inset:0;z-index:50;background:#000;color:#5a5a5a;display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:calc(env(safe-area-inset-top,0px) + 40px) 24px calc(env(safe-area-inset-bottom,0px) + 40px);touch-action:none;-webkit-user-select:none;user-select:none}
+.lock[hidden]{display:none}
+.lock .lc{font-family:var(--num);font-weight:700;font-size:7rem;line-height:1;text-align:center}
+.lock .lc small{display:block;font-size:1.2rem;font-weight:500}
+.lock .ld{font-family:var(--num);font-size:1.6rem;text-align:center}
+.slide{width:100%;max-width:340px;text-align:center;font-size:.95rem}
+.slide input{-webkit-appearance:none;appearance:none;width:100%;height:64px;border-radius:32px;background:#1a1a1a;margin-top:10px;touch-action:pan-x}
+.slide input::-webkit-slider-thumb{-webkit-appearance:none;width:64px;height:64px;border-radius:50%;background:#444;border:0}
 </style>
 </head>
 <body>
@@ -138,8 +149,17 @@ details p{color:var(--muted);font-size:.92rem}
       <button class="pause" id="btnPause" hidden>Pausar</button>
       <button class="stop" id="btnStop" hidden>Encerrar</button>
     </div>
+    <div class="ctrl" style="margin-top:10px">
+      <button id="lockBtn" hidden>Bloquear tela para o bolso</button>
+    </div>
     <div class="msg" id="msg"></div>
   </section>
+
+  <div class="lock" id="lock" hidden>
+    <div class="lc"><span id="lkCad">165</span><small>passos/min</small></div>
+    <div class="ld"><span id="lkDist">0,00</span> km · <span id="lkTime">0:00</span></div>
+    <div class="slide">Deslize para desbloquear<input type="range" id="unlock" min="0" max="100" value="0" aria-label="Deslize para desbloquear"></div>
+  </div>
 
   <section class="card">
     <h2>Trechos</h2>
@@ -178,6 +198,7 @@ details p{color:var(--muted);font-size:.92rem}
       <summary>Como usar no iPhone</summary>
       <p>Abra no Safari, toque em Compartilhar e escolha “Adicionar à Tela de Início”. Ao iniciar, permita o acesso à localização.</p>
       <p>Deixe a tela ligada durante a corrida (o app tenta impedir que ela apague sozinha). Se a tela travar ou você trocar de app, o iOS pausa o GPS e o metrônomo. Abaixe o brilho para economizar bateria.</p>
+      <p>Para o bolso: toque em “Bloquear tela para o bolso”. A tela fica preta e ignora toques até você deslizar a barra. Para impedir também o gesto de sair do app, use o Acesso Guiado (Ajustes › Acessibilidade › Acesso Guiado).</p>
       <p>Se não ouvir as batidas, confira o volume e a chave de silencioso do iPhone.</p>
     </details>
   </section>
@@ -329,19 +350,19 @@ details p{color:var(--muted);font-size:.92rem}
     } else { st.paused=false; st.last=null; }
     st.t0=performance.now();
     metroStart(); keepAwake(); if(!$("test").checked) gpsStart();
-    $("btnStart").hidden=true; $("btnPause").hidden=false; $("btnStop").hidden=false;
+    $("btnStart").hidden=true; $("btnPause").hidden=false; $("btnStop").hidden=false; $("lockBtn").hidden=false;
     showMsg(""); renderAll();
   };
   $("btnPause").onclick = function(){
     st.elapsed = elapsedNow(); st.paused=true; metroStop(); gpsStop();
     if(lock){ lock.release().catch(function(){}); lock=null; }
-    $("btnStart").textContent="Continuar"; $("btnStart").hidden=false; $("btnPause").hidden=true;
+    $("btnStart").textContent="Continuar"; $("btnStart").hidden=false; $("btnPause").hidden=true; $("lockBtn").hidden=true;
     showMsg("Pausado.");
   };
   $("btnStop").onclick = function(){
     st.elapsed = elapsedNow(); st.running=false; st.paused=false; metroStop(); gpsStop();
     if(lock){ lock.release().catch(function(){}); lock=null; }
-    $("btnStart").textContent="Iniciar"; $("btnStart").hidden=false; $("btnPause").hidden=true; $("btnStop").hidden=true;
+    $("btnStart").textContent="Iniciar"; $("btnStart").hidden=false; $("btnPause").hidden=true; $("btnStop").hidden=true; $("lockBtn").hidden=true;
     showMsg("Corrida encerrada: "+fmtKm(st.dist)+" km em "+fmtTime(st.elapsed)+".");
     renderAll();
   };
@@ -427,6 +448,24 @@ details p{color:var(--muted);font-size:.92rem}
     if(!st.splits.length){ ul.innerHTML='<li class="empty">Aparecem aqui a cada km completo.</li>'; return; }
     ul.innerHTML=st.splits.map(function(s,i){ return '<li><span>Km '+(i+1)+'</span><span>'+fmtTime(s)+'</span></li>'; }).join("");
   }
+
+  // ---------- Bloqueio de tela ----------
+  function setLock(on){
+    $("lock").hidden=!on; $("unlock").value=0;
+    if(on){ keepAwake(); updLock(); }
+  }
+  function updLock(){
+    if($("lock").hidden) return;
+    $("lkCad").textContent=curSpm(); $("lkDist").textContent=fmtKm(st.dist); $("lkTime").textContent=fmtTime(elapsedNow());
+  }
+  setInterval(updLock,500);
+  $("lockBtn").onclick=function(){ setLock(true); };
+  function tryUnlock(){ var u=$("unlock"); if(+u.value>=92) setLock(false); else u.value=0; }
+  $("unlock").addEventListener("change",tryUnlock);
+  $("unlock").addEventListener("touchend",tryUnlock);
+  ["touchstart","touchmove","click","dblclick","gesturestart"].forEach(function(ev){
+    $("lock").addEventListener(ev,function(e){ if(e.target!==$("unlock")) e.preventDefault(); },{passive:false});
+  });
 
   renderSegs(); renderAll();
 })();
